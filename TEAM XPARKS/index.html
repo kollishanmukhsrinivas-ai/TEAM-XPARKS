@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gemini AI Assistant (Chat Interface, Dark Theme)</title>
+<style>
+  * {
+    box-sizing: border-box;
+  }
+  body, html {
+    margin: 0; padding: 0; height: 100%;
+    background: #121212;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overscroll-behavior: none;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+  }
+  header {
+    background: #1e1e1e;
+    box-shadow: 0 2px 8px #2f2f2fcc;
+    padding: 20px 28px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 1.75rem;
+    color: #57a6ff;
+    user-select: none;
+  }
+  main {
+    flex-grow: 1;
+    background: #222222;
+    padding: 20px 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .chat-message {
+    max-width: 80%;
+    padding: 14px 18px;
+    border-radius: 16px;
+    word-break: break-word;
+    white-space: pre-wrap;
+    font-size: 1.1rem;
+    line-height: 1.4;
+    box-shadow: 0 0 10px #0005;
+    user-select: text;
+  }
+  .chat-message.user {
+    align-self: flex-end;
+    background: #4f8dfd;
+    color: white;
+    border-bottom-right-radius: 4px;
+  }
+  .chat-message.agent {
+    align-self: flex-start;
+    background: #2e2e2e;
+    color: #c9d1d9;
+    border-bottom-left-radius: 4px;
+  }
+  .spinner {
+    display: inline-block;
+    width: 26px;
+    height: 26px;
+    border: 4px solid #2f6bec40;
+    border-top: 4px solid #4f8dfd;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin {
+    0%   {transform: rotate(0deg);}
+    100% {transform: rotate(360deg);}
+  }
+  .error-message {
+    background: #9b2c2c;
+    color: #ffbdbd;
+    font-size: 1rem;
+    border-radius: 8px;
+    padding: 12px;
+    margin: 12px 16px 0;
+    user-select: none;
+    text-align: center;
+  }
+  footer {
+    background: #1e1e1e;
+    padding: 16px 24px;
+    box-shadow: 0 -2px 8px #2f2f2fcc;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+  }
+  input[type="text"] {
+    flex-grow: 1;
+    padding: 14px 16px;
+    border-radius: 8px;
+    border: none;
+    background: #272727;
+    color: #eee;
+    font-size: 1.15rem;
+    outline-offset: 2px;
+    outline-color: #57a6ff;
+    transition: outline-color 0.3s ease;
+  }
+  input[type="text"]:focus {
+    outline-color: #1e90ff;
+    background: #333333;
+  }
+  input[type="file"] {
+    color: #ccc;
+    width: 140px;
+  }
+  button#sendBtn {
+    background: linear-gradient(90deg, #4f8dfd, #2f6bec);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 1.15rem;
+    font-weight: 600;
+    padding: 14px 26px;
+    cursor: pointer;
+    user-select: none;
+    box-shadow: 0 4px 12px #2b6cfdaa;
+    transition: background 0.3s ease;
+    flex-shrink: 0;
+  }
+  button#sendBtn:hover,
+  button#sendBtn:focus {
+    background: linear-gradient(90deg, #2f6bec, #4f8dfd);
+    outline: none;
+    box-shadow: 0 0 20px #4f8dfdcc;
+  }
+  @media (max-width: 480px) {
+    footer {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+    }
+    input[type="file"] {
+      width: 100%;
+    }
+    button#sendBtn {
+      width: 100%;
+      padding: 14px 0;
+    }
+  }
+</style>
+</head>
+<body>
+  <div id="app">
+    <header>Gemini AI Assistant</header>
+    <main id="chatWindow" aria-live="polite" role="feed" aria-atomic="false" tabindex="0">
+      <!-- Chat messages will be appended here -->
+    </main>
+    <footer>
+      <input type="text" id="query" placeholder="Ask a question or use commands (/weather London)" aria-label="Question input" autocomplete="off" />
+      <input type="file" id="imageInput" accept="image/*" aria-label="Image attachment (optional)" />
+      <button id="sendBtn" aria-live="polite" aria-busy="false" aria-label="Send question and image">Send</button>
+    </footer>
+  </div>
+
+<script>
+  const sendBtn = document.getElementById('sendBtn');
+  const queryInput = document.getElementById('query');
+  const chatWindow = document.getElementById('chatWindow');
+  const imageInput = document.getElementById('imageInput');
+  const errorBoxId = 'error-msg';
+
+  // Conversation history to send to backend
+  let lastHistory = null;
+
+  // Create chat bubble for user or agent
+  function createChatBubble(text, sender) {
+    const div = document.createElement('div');
+    div.classList.add('chat-message', sender);
+    div.textContent = text;
+    return div;
+  }
+
+  // Create a spinner bubble while waiting for AI response
+  function createSpinnerBubble() {
+    const div = document.createElement('div');
+    div.classList.add('chat-message', 'agent');
+    div.id = 'spinnerBubble';
+    div.innerHTML = '<span class="spinner"></span> Typing...';
+    return div;
+  }
+
+  // Display error message in chat window
+  function showError(msg) {
+    let existing = document.getElementById(errorBoxId);
+    if (existing) existing.remove();
+
+    const div = document.createElement('div');
+    div.id = errorBoxId;
+    div.className = 'error-message';
+    div.textContent = msg;
+    chatWindow.appendChild(div);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+  }
+
+  function clearError() {
+    const existing = document.getElementById(errorBoxId);
+    if (existing) existing.remove();
+  }
+
+  async function sendRequest() {
+    const question = queryInput.value.trim();
+    if (!question) {
+      showError('Please enter a question or command.');
+      return;
+    }
+    clearError();
+
+    // Append user message bubble
+    const userBubble = createChatBubble(question, 'user');
+    chatWindow.appendChild(userBubble);
+
+    // Scroll down
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    // Clear input and disable controls during request
+    queryInput.value = '';
+    queryInput.disabled = true;
+    sendBtn.disabled = true;
+    sendBtn.setAttribute('aria-busy', 'true');
+
+    // Append spinner bubble
+    const spinner = createSpinnerBubble();
+    chatWindow.appendChild(spinner);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    try {
+      let formData, headers;
+
+      if (imageInput.files.length > 0) {
+        // Multipart form-data with image
+        formData = new FormData();
+        formData.append('question', question);
+        formData.append('image', imageInput.files[0]);
+        if (lastHistory) formData.append('history', JSON.stringify(lastHistory));
+        headers = {};
+      } else {
+        // JSON body
+        formData = JSON.stringify({ question, history: lastHistory });
+        headers = { 'Content-Type': 'application/json' };
+      }
+
+      const res = await fetch('http://localhost:5000/api/ask', {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server returned status ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      // Remove spinner
+      if (spinner && spinner.parentNode) {
+        spinner.parentNode.removeChild(spinner);
+      }
+
+      // Append agent response bubble
+      const agentBubble = createChatBubble(data.answer || '[No response]', 'agent');
+      chatWindow.appendChild(agentBubble);
+
+      // Update conversation history
+      lastHistory = data.history || null;
+
+      // Clear uploaded image
+      imageInput.value = '';
+
+      // Scroll down
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+    } catch (error) {
+      // Remove spinner if it's still there
+      if (spinner && spinner.parentNode) {
+        spinner.parentNode.removeChild(spinner);
+      }
+      showError('Error: Could not reach the server. Check your connection and backend.');
+      console.error(error);
+    } finally {
+      queryInput.disabled = false;
+      sendBtn.disabled = false;
+      sendBtn.setAttribute('aria-busy', 'false');
+      queryInput.focus();
+    }
+  }
+
+  sendBtn.addEventListener('click', sendRequest);
+
+  // Allow Enter key to submit message
+  queryInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      sendRequest();
+    }
+  });
+</script>
+</body>
+</html>
